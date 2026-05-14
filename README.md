@@ -1,373 +1,304 @@
-<meta property="og:image" content="https://github.com/muhammad-yasin79/Badminton_Analytics_Project/raw/main/Thumbnail.png"/>
+# Badminton Analytics
 
-# 🏸 Badminton Player Movement Analytics
-
-![Annotated video frame](results/Thumbnail.png)
-
-A complete **computer vision–driven sports analytics project** that extracts, analyzes, and visualizes badminton player movement to generate **coach‑interpretable tactical insights**.
-
-This repository demonstrates how raw video and trajectory data can be transformed into **advanced spatial analytics**, similar to methods used in professional sports performance analysis.
-
----
-
-## 📌 Project Overview
-
-Modern sports analytics goes beyond statistics, it focuses on **space, movement, and decision‑making**.\
-This project analyzes badminton player positioning using trajectory data derived from match footage, pose estimation and shuttle detection.
-
-The goal is to answer questions such as:
-
-- Who controls which areas of the court?
-- How do players transition between attack and defense?
-- Where does physical pressure peak?
-- How disciplined is a player’s positioning?
-
-All insights are derived **purely from movement trajectories**, making the approach scalable and camera‑agnostic.
-
----
-
-## 🎯 Objectives
-
-- Extract player movement trajectories from video
-- Normalize movements to a consistent court reference frame
-- Quantify spatial dominance and court usage
-- Compare players using interpretable visual analytics
-- Present results in a **portfolio‑ready, research‑grade format**
-- Detects the shuttlecock using a custom-trained YOLO11 model
-
-The pipeline is modular and extensible, enabling future shot-type classification and rally-level analysis.
-
-## 🎥 Demo
-
-Below is a preview of the annotated badminton analytics output.
-
-<div align="center">
-  <a href="https://drive.google.com/file/d/1eHXk_JpB62gfHbw5AfBkhl1Yojlu7zTF/view?usp=sharing" target="_blank">
-    ▶️ Click to watch full demo<br/>
-    <img src="results/Thumbnail.png" alt="Watch demo" width="400"/>
-  </a>
-</div>
-
----
-
-## 📂 Repository Structure
+Computer-vision badminton analytics. Upload a match clip in the web UI, the
+video is streamed to a remote GPU (Grafilabs / GraphLabs) over an SSH tunnel
+for tracking + shuttle detection, and the laptop renders the annotated video
+and analytics charts. Job state lives in Postgres so past runs are browseable
+at `/jobs`.
 
 ```
-Badminton_Analytics_Project/
-│
-├── datasets/
-│   └── Shuttlecock.v1i.yolov11/
-│   	 ├── test/
-│   	 │	└── ....
-│   	 ├── train/
-│   	 │	└── ....
-│   	 ├── valid/
-│   	 │	└── ....
-│   	 ├── data.yaml
-│   	 ├── README.dataset.txt
-│   	 └── README.roboflow.txt   
-├── logs/
-│
-├── notebooks/
-│   └── Badminton Analysis.ipynb
-│
-├── Results/
-│   ├── RECOVERY POSITION (MEAN + DISPERSION)_20260105_115146_255325.png
-│   ├── Player Trajectories Over Court_20260105_113759_732482.png
-│   ├── players_speed_over_time.png
-│   └── .......
-│
-├── Runs/
-│
-├── videos/
-│   ├── Video Project 2.mp4
-│   └── Video Project.mp4
-│
-├── weights/
-│   ├── best.pt
-│   └── last.pt
-│
-├── README.md
-├── requirements.txt
-└── .gitignore
+Browser ── http ──▶ ui/  (laptop container, Flask :7860)
+                     │ video upload + analytics rendering
+                     │ job state ←→ Postgres (sibling container)
+                     ▼
+           RemoteYOLO HTTP client
+                     │ POST /predict, /track
+                     ▼  ssh -L 8000:127.0.0.1:8000
+           remote_inference/server.py  (Grafilabs GPU box, FastAPI :8000)
+                     │
+                     ▼
+           ultralytics.YOLO on CUDA   (detect | pose | shuttle)
 ```
 
----
+Two pieces to run:
 
-## 🛠 Technologies Used
+1. **Inference server** on the Grafilabs GPU box (FastAPI + CUDA).
+2. **Web UI + Postgres** on your laptop (Docker Compose), plus an SSH tunnel
+   that exposes the GPU box's `:8000` as `127.0.0.1:8000` locally.
 
-- **Python**
-- **OpenCV** – video processing
-- **YOLOv8** – player detection
-- **YOLOv8 Pose Estimation** – player joint detection
-- **YOLO11 Object Detection** – shuttlecock detection (custom trained)
-- **NumPy / Pandas** – data processing
-- **Matplotlib** – scientific visualization
-- **MoviePy** – video/audio handling
-	
+The UI never imports `torch` / `ultralytics`; the GPU box never accepts public
+traffic. Everything goes through the tunnel.
 
 ---
 
-## 🔬 Methodology
+## Prerequisites
 
-### 1️⃣ Player Tracking & Trajectory Extraction
+**Laptop**
+- Docker Desktop (Windows / macOS) or Docker Engine + Compose plugin (Linux).
+- OpenSSH client (`ssh` on PATH). PowerShell 5.1+ on Windows.
+- Your Grafilabs SSH key.
 
-- Players are detected using YOLOv8 pose estimation
-- The body center (or ankle midpoint) is used as the player position
-- Trajectories are stored as `(x, y, time)` sequences
+**Grafilabs GPU instance**
+- Ubuntu 22.04 with an NVIDIA driver. `nvidia-smi` must work.
+- Python 3.10 or 3.11.
+- Outbound HTTPS so `pip` and the ultralytics weight downloader can fetch
+  packages and `yolov8n*.pt` weights.
 
-### 2️⃣ Court Normalization
-
-- Raw coordinates are normalized to a **canonical court reference frame**
-- This allows fair comparison across frames, rallies, and players
-
-### 3️⃣ Spatial Analytics
-
-- The court is divided into logical zones (Front/Mid/Back × Left/Right)
-- Movement density, transitions, and dominance are computed
-
-### 4️⃣ Shuttlecock Detection & Shot-Type Context (YOLO11)
-
-- A YOLO11 object detection model is custom-trained to detect the shuttlecock
--Training data is sourced from an open-source Roboflow dataset
-
-- Shuttle trajectories provide:
-
-	- Temporal shot context
-
-	- Spatial shot location
-
-	-Player–shuttle interaction alignment
-
-This enables shot-type analysis (e.g., smash, drop, clear) by combining:
-
-- Shuttle movement patterns
-
-- Player position and movement dynamics
+You do **not** need to install Python, CUDA, or PyTorch on the laptop. The UI
+ships as a container; only the GPU box runs torch.
 
 ---
 
-## 📊 Visual Analytics & Insights
+## 1. Provision the Grafilabs GPU box
 
-## 1️⃣ Player Detection(Inside Court Area)
-
-**What it shows:**
-
-- Frame‑wise detection of players constrained inside the court polygon  
-- Bounding boxes adjusted to each player’s centre position  
-- The number at the start of the title indicates total detections inside court for that frame
-
-<p align="center">
-  <img src="results/Player Detection.png" width="65%">
-</p>
-
-## 2️⃣ Skeleton Pose Estimation
-
-**What it shows:**
-
-- Frame‑wise detection of player keypoints using YOLOv8‑Pose  
-- Each skeleton represents a detected player with confidence score shown above the bounding box  
-- The number at the start of the title indicates total pose detections for that frame
-
-<p align="center">
-  <img src="results/Player Skeleton.png" width="65%">
-</p>
-
-
-**Insight:** Highlights posture, balance, and movement dynamics for both players.
-
----
-
-### 3️⃣ Court Dominance Difference Map
-
-**What it shows:**
-
-- Relative spatial dominance between Player 1 and Player 2
-- Positive regions indicate Player 1 control
-- Negative regions indicate Player 2 control
-
-<p align="center">
-  <img src="results/COURT DOMINANCE MAP (P1 − P2)_20260105_115142_056806.png" width="45%">
-</p>
-
-
-
-**Insight:** Reveals tactical pressure zones and positional advantages.
-
----
-
-### 4️⃣ Court Coverage – Convex Hull
-
-**What it shows:**
-
-- The total area of the court covered by each player
-- Movement discipline vs roaming behavior
-
-<p align="center">
-  <img src="results/CONVEX HULL (COURT COVERAGE)_20260105_115142_989414.png" width="45%">
-</p>
-
-
-**Insight:** Players with smaller hulls often exhibit better positional discipline.
-
----
-
-### 5️⃣ Zone Transition Matrix
-
-**What it shows:**
-
-- Probabilities of moving between court zones
-- Attack ↔ defense transitions
-
-<p align="center">
-  <img src="results/ZONE TRANSITION MATRIX_20260105_115144_062175.png" width="45%">
-</p>
-
-
-
-**Insight:** Highlights play style (aggressive vs defensive) and recovery behavior.
-
----
-
-### 6️⃣ Speed‑Weighted Court Map
-
-**What it shows:**
-
-- Average movement speed per court location
-- High‑intensity zones where explosive movement occurs
-
-<p align="center">
-  <img src="results/SPEED-WEIGHTED COURT MAP_20260105_115145_082427.png" width="45%">
-</p>
-
-**Insight:** Identifies physically demanding regions of play.
-
----
-
-### 7️⃣ Recovery / Mean Position
-
-**What it shows:**
-
-- Average positioning over the entire rally
-- Tactical reset tendencies
-
-<p align="center">
-  <img src="results/RECOVERY POSITION (MEAN + DISPERSION)_20260105_115146_255325.png" width="45%">
-</p>
-
-
-**Insight:** Elite players tend to recover closer to optimal central positions.
-
-** 8️⃣ Other Visuals**
-
-**Player Trajectories Over Court**
-
-<p align="center">
-  <img src="results/Player Trajectories Over Court_20260105_113759_732482.png" width="45%">
-</p>
-
-**Player Movement Heatmap**
-
-<p align="center">
-  <img src="results/Movement Heatmap_20260105_114132_404202.png" width="45%">
-</p>
-
-**Players Speed over Time**
-
-<p align="center">
-  <img src="results/Players Speed over Time_20260105_113957_537077.png" width="45%">
-</p>
-
-**Speed over Frame**
-
-<p align="center">
-  <img src="results/layerA_validation_speed_plot_20260105_114342_805135.png" width="45%">
-</p>
-
-**validation_metrics**
-
-<p align="center">
-  <img src="results/extended_validation_metrics_20260105_114520_070051.png" width="45%">
-</p>
-
-
-
----
-
-## 🧠 Key Insights Enabled
-
-- Spatial dominance comparison between players
-- Identification of defensive vs offensive tendencies
-- Court usage efficiency and discipline
-- Physical load distribution across the court
-- Movement strategy characterization
-
----
-
-## 📈 Applications
-
-- **Performance analysis for coaches**
-- **Player scouting & comparison**
-- **Sports science & biomechanics research**
-- **Computer vision portfolio projects**
-- **Movement behavior modeling**
-
----
-
-## 🚀 Future Work
-
-- Shuttle tracking and shot‑based analysis
-- Rally‑level segmentation
-- Injury risk indicators from asymmetry
-- Time‑resolved fatigue analysis
-- Interactive dashboard (Plotly / Streamlit)
-
----
-
-## ▶️ How to Run
-
-
-Open the notebook:
+SSH into your instance and clone the repo:
 
 ```bash
-colab notebook notebooks/Badminton_Analysis.ipynb
+sudo apt-get update && sudo apt-get install -y python3.11-venv ffmpeg git
+git clone <your-fork-of-this-repo> badminton
+cd badminton
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 ```
 
----
+Install the CUDA-enabled PyTorch wheel **first**, pinned to a `cu###` that
+matches the driver's CUDA version reported by `nvidia-smi`. `cu121` is the
+safe baseline for any driver advertising CUDA 12.1+:
 
-## 👤 Author
+```bash
+pip uninstall -y torch torchvision torchaudio
+pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision
+pip install -r remote_inference/requirements-server.txt
+```
 
-**Muhammad Yasin**\
-Data Analytics | Computer Vision | Sports Analytics
+Verify CUDA is wired up — this must print the device name and nothing else:
 
-📫 LinkedIn: [https://www.linkedin.com/in/muhammad-yasin-ds](https://www.linkedin.com/in/muhammad-yasin-ds)\
-💻 GitHub: [https://github.com/muhammadyasin79](https://github.com/muhammadyasin79)
+```bash
+python -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"
+```
 
----
+Upload your custom shuttlecock weights from the laptop:
 
-## ⭐ Datasets & Acknowledgements
+```powershell
+# from the laptop, in the project root
+scp weights\best.pt user@gpu.grafilabs.example:/home/user/badminton/weights/best.pt
+```
 
-**Shuttlecock Detection Dataset**
+`yolov8n.pt` and `yolov8n-pose.pt` are downloaded by `ultralytics` on first
+use, so no manual upload needed for those.
 
-@misc{shuttlecock-cqzy3_dataset,
-  title        = {Shuttlecock Dataset},
-  author       = {Mathieu Cartron},
-  howpublished = {https://universe.roboflow.com/mathieu-cartron/shuttlecock-cqzy3},
-  year         = {2022},
-  month        = {March},
-  note         = {Accessed: 2026-01-05}
-}
-
-- Used for custom training of YOLO11 shuttlecock detection model
-
-- Enables shot-type and rally-context analysis
-
-**Tools**
-
-- Ultralytics YOLOv8
-- Open‑source computer vision community
+> **Gotcha:** `pip install torch` without `--index-url` pulls the newest
+> CPU/CUDA wheel and you'll get `RuntimeError: The NVIDIA driver on your
+> system is too old`. Always pin the index URL.
 
 ---
 
-If you find this project useful, feel free to ⭐ the repository or reach out for collaboration.
+## 2. Start the inference server on the GPU box
 
+Bind to **localhost only** so it's reachable only through the SSH tunnel:
+
+```bash
+cd ~/badminton
+source .venv/bin/activate
+
+export HOST=127.0.0.1
+export PORT=8000
+export INFER_DEVICE=cuda:0          # cuda:1 on multi-GPU
+export INFER_HALF=1                 # fp16 on
+export SHUTTLE_WEIGHTS=weights/best.pt
+
+# Run inside tmux so it survives SSH disconnects
+tmux new -s infer
+python remote_inference/server.py
+# Ctrl-b d to detach; `tmux attach -t infer` to come back
+```
+
+Startup aborts loudly if `torch.cuda.is_available()` is `False`. There is
+**no CPU fallback** — that's intentional.
+
+---
+
+## 3. Open the SSH tunnel from your laptop
+
+Leave this terminal open for as long as you want the UI to work.
+
+**Windows / PowerShell**
+
+```powershell
+$env:GRAFI_HOST = "user@gpu.grafilabs.example"
+$env:GRAFI_PORT = "22"                              # if Grafilabs gave you a non-22 port
+$env:GRAFI_KEY  = "$HOME\.ssh\grafilabs_id_ed25519"
+
+# Bind '*' is required so the Docker UI container (which reaches the host as
+# host.docker.internal — NOT loopback) can see the tunnel. Only do this on a
+# trusted LAN; anyone reachable on :8000 can POST to your GPU.
+$env:GRAFI_TUNNEL_BIND = "*"
+
+.\remote_inference\start_tunnel.ps1
+```
+
+**macOS / Linux**
+
+```bash
+export GRAFI_HOST=user@gpu.grafilabs.example
+export GRAFI_PORT=22
+export GRAFI_KEY=~/.ssh/grafilabs_id_ed25519
+./remote_inference/start_tunnel.sh
+```
+
+Verify in another terminal:
+
+```bash
+curl http://127.0.0.1:8000/health
+# {"ok": true, "device": "cuda:0", "cuda": true, "half": true,
+#  "gpu": {"index": 0, "name": "NVIDIA GeForce RTX 4090", ...}}
+```
+
+If `cuda` is `false` or you get `Connection refused`, fix that before
+bringing up the UI — the UI's health badge will just say "tunnel down".
+
+---
+
+## 4. Bring up the web UI + Postgres
+
+In the project root on the laptop:
+
+```bash
+docker compose up -d --build
+```
+
+This starts two containers:
+
+| Container | Purpose | Address |
+| --- | --- | --- |
+| `ui` | Flask app (`ui/app.py`) | http://127.0.0.1:7860 |
+| `postgres` | Job + artifact state | compose-internal `postgres:5432` |
+
+Volumes:
+
+- `uidata` — uploads at `ui/data/uploads/` and results at `ui/data/results/`.
+- `pgdata` — Postgres data dir.
+
+Both survive `docker compose down`; add `-v` to wipe them.
+
+Useful commands:
+
+```bash
+docker compose logs -f ui                    # tail UI logs
+docker compose exec postgres psql -U badminton   # ad-hoc SQL
+docker compose restart ui                    # after editing code
+docker compose down                          # stop (data preserved)
+docker compose down -v                       # stop + wipe pgdata, uidata
+```
+
+Environment overrides (set before `docker compose up`):
+
+| Var | Default | Purpose |
+| --- | --- | --- |
+| `BADMINTON_INFER_URL` | `http://host.docker.internal:8000` | Where the UI reaches the tunnel. |
+| `MAX_UPLOAD_MB` | `500` | Per-upload size cap. |
+
+---
+
+## 5. Use it
+
+Open http://127.0.0.1:7860.
+
+- The GPU health badge in the navbar should read `✓ <GPU name>`. If it
+  shows `✗ tunnel down`, step 3 is broken.
+- Drop a clip onto the upload card. The job page streams progress over
+  Server-Sent Events; when it finishes you get the annotated MP4, nine
+  analytics PNGs, and five CSVs.
+- Past jobs are at http://127.0.0.1:7860/jobs.
+
+---
+
+## Daily restart
+
+Once the box is provisioned (steps 1 & 2's `pip install` are one-time), a
+normal session is just:
+
+```bash
+# on the GPU box (via SSH; tmux pane survives logout)
+tmux attach -t infer     # or start fresh if the pane is gone
+
+# on the laptop
+.\remote_inference\start_tunnel.ps1     # leave running
+docker compose up -d                    # leave running
+```
+
+Open http://127.0.0.1:7860.
+
+---
+
+## Bare-metal alternative (no Docker)
+
+If you'd rather run the UI without containers:
+
+```powershell
+# Postgres in a one-off container
+docker run -d --name pg `
+  -e POSTGRES_USER=badminton -e POSTGRES_PASSWORD=badminton -e POSTGRES_DB=badminton `
+  -p 127.0.0.1:5432:5432 postgres:16-alpine
+
+# Python deps
+pip install -r ui\requirements.txt
+
+# Start the UI
+$env:DATABASE_URL = "postgresql://badminton:badminton@127.0.0.1:5432/badminton"
+$env:BADMINTON_INFER_URL = "http://127.0.0.1:8000"
+.\ui\start_ui.ps1
+```
+
+In this mode the tunnel can stay on the default `127.0.0.1` bind — no
+`GRAFI_TUNNEL_BIND=*` needed.
+
+---
+
+## Troubleshooting
+
+- **UI says `✗ tunnel down`** — the SSH tunnel terminal closed, or the
+  bind address is wrong for Docker. From the container, the host's
+  loopback is *not* `127.0.0.1`; you need `GRAFI_TUNNEL_BIND=*` (or the
+  bare-metal path above).
+- **`/health` shows `"cuda": false`** — the server fell back to CPU
+  (shouldn't happen — startup is supposed to abort). Re-check that you
+  installed the `cuXXX` torch wheel before `requirements-server.txt`.
+- **`CUDA out of memory`** — keep `INFER_HALF=1`, or request a larger GPU.
+- **Job stuck at "uploading video"** — large clip; the entire file is
+  posted to `/track` once. Watch `docker compose logs -f ui` and the
+  server's tmux pane.
+- **`docker compose up` errors on port 7860** — something else is bound
+  to it; either kill it or change the host-side port mapping in
+  `docker-compose.yml`.
+- **Postgres won't start on Windows because 5432 is reserved** — the
+  default compose file doesn't expose the port on the host, so this only
+  affects the bare-metal path. Use a different host port (e.g. 55432).
+
+For lower-level / notebook usage of the same inference server, see
+[`remote_inference/README.md`](remote_inference/README.md).
+
+---
+
+## Repo layout
+
+```
+ui/                      # Flask web app (containerized)
+  app.py                 # routes: /, /upload, /jobs, /jobs/<id>, /results/...
+  jobs.py                # per-job worker (track → pose → shuttle → analytics)
+  analytics.py           # matplotlib charts ported from the notebook
+  db.py                  # Postgres schema + CRUD
+  templates/, static/    # UI
+remote_inference/        # GPU-side FastAPI server + SSH tunnel helpers
+  server.py              # POST /predict, /track  (GPU-only)
+  remote_yolo.py         # ultralytics.YOLO drop-in over HTTP
+  start_tunnel.ps1, .sh
+notebooks/               # Original Colab analysis notebook
+weights/best.pt          # Custom shuttlecock detector
+docker-compose.yml       # ui + postgres
+```
+
+No tests / linters / build system. Validate Python edits with
+`python -m py_compile <file>`.
