@@ -7,15 +7,27 @@
 <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<header>
-  <h1>🏸 Job <code>{{ job_id }}</code></h1>
-  <a href="/" class="badge">← new upload</a>
-</header>
+<nav class="navbar">
+  <a class="brand" href="/">
+    <span class="brand-mark">🏸</span>
+    <span>Badminton Analytics</span>
+  </a>
+  <div class="nav-links">
+    <a href="/">Upload</a>
+    <a href="/jobs">Past jobs</a>
+  </div>
+  <div class="nav-right">
+    <span class="job-id">Job <code>{{ job_id }}</code></span>
+  </div>
+</nav>
+
+<div class="page-title">
+  <h1 id="status-line">queued…</h1>
+  <div class="subtitle"><strong>File:</strong> {{ filename }} · <span id="elapsed">0s</span></div>
+</div>
 
 <main>
   <section class="card">
-    <h2 id="status-line">queued…</h2>
-    <p class="muted"><strong>File:</strong> {{ filename }} · <span id="elapsed">0s</span></p>
     <div class="progress"><div id="bar"></div></div>
     <p class="muted" id="message"></p>
     <p class="muted" id="frames"></p>

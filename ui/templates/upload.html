@@ -7,15 +7,28 @@
 <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<header>
-  <h1>🏸 Badminton Analytics</h1>
-  <div id="health" class="badge">checking GPU…</div>
-</header>
+<nav class="navbar">
+  <a class="brand" href="/">
+    <span class="brand-mark">🏸</span>
+    <span>Badminton Analytics</span>
+  </a>
+  <div class="nav-links">
+    <a href="/" class="active">Upload</a>
+    <a href="/jobs">Past jobs</a>
+  </div>
+  <div class="nav-right">
+    <div id="health" class="badge">checking GPU…</div>
+  </div>
+</nav>
+
+<div class="page-title">
+  <h1>Upload a match clip</h1>
+  <div class="subtitle">Inference runs on the remote GPU at <code>{{ infer_url }}</code></div>
+</div>
 
 <main>
   <section class="card">
-    <h2>Upload a match clip</h2>
-    <p class="muted">Inference runs on the remote GPU at <code>{{ infer_url }}</code>. Max upload {{ max_mb }} MB. Formats: mp4, mov, avi, mkv.</p>
+    <p class="muted">Max upload {{ max_mb }} MB. Formats: mp4, mov, avi, mkv.</p>
 
     <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
       <label class="dropzone" id="dropzone">

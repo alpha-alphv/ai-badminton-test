@@ -138,6 +138,16 @@ def get_job(job_id: str) -> Optional[dict[str, Any]]:
             return cur.fetchone()
 
 
+def list_jobs(limit: int = 200) -> list[dict[str, Any]]:
+    with get_pool().connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT %s",
+                (limit,),
+            )
+            return cur.fetchall()
+
+
 def upsert_artifact(job_id: str, key: str, url: str, path: Optional[str] = None) -> None:
     with get_pool().connection() as conn:
         conn.execute(
@@ -170,6 +180,7 @@ __all__ = [
     "init_schema",
     "insert_job",
     "list_artifacts",
+    "list_jobs",
     "update_job",
     "upsert_artifact",
 ]

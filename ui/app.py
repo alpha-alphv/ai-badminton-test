@@ -123,6 +123,12 @@ def _too_large(_exc):
     return jsonify({"error": f"file exceeds {MAX_UPLOAD_MB} MB cap"}), 413
 
 
+@app.route("/jobs")
+def jobs_index():
+    rows = db.list_jobs()
+    return render_template("jobs.html", jobs=rows)
+
+
 @app.route("/jobs/<job_id>")
 def job_page(job_id: str):
     row = db.get_job(job_id)

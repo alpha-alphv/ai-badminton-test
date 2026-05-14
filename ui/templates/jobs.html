@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Jobs — Badminton Analytics</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<nav class="navbar">
+  <a class="brand" href="/">
+    <span class="brand-mark">🏸</span>
+    <span>Badminton Analytics</span>
+  </a>
+  <div class="nav-links">
+    <a href="/">Upload</a>
+    <a href="/jobs" class="active">Past jobs</a>
+  </div>
+  <div class="nav-right">
+    <a href="/" class="btn-primary-sm">+ New upload</a>
+  </div>
+</nav>
+
+<div class="page-title">
+  <h1>Past jobs</h1>
+  <div class="subtitle">{{ jobs|length }} job{{ '' if jobs|length == 1 else 's' }} on record</div>
+</div>
+
+<main>
+  <section class="card">
+    {% if not jobs %}
+      <p class="muted">No jobs yet. <a href="/">Upload a clip</a> to get started.</p>
+    {% else %}
+    <table class="jobs">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>File</th>
+          <th>Status</th>
+          <th>Progress</th>
+          <th>Frames</th>
+          <th>Started</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in jobs %}
+        <tr>
+          <td><a href="/jobs/{{ j.id }}"><code>{{ j.id }}</code></a></td>
+          <td class="muted">{{ j.input_filename }}</td>
+          <td><span class="pill pill-{{ j.status }}">{{ j.status }}</span></td>
+          <td>{{ '%.0f' % (j.progress * 100) }}%</td>
+          <td class="muted">{{ j.frames_done }}/{{ j.total_frames }}</td>
+          <td class="muted" data-ts="{{ j.started_at }}">{{ j.started_at }}</td>
+          <td class="muted" data-start="{{ j.started_at }}" data-end="{{ j.finished_at or '' }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+</main>
+
+<script>
+function fmtDur(s) {
+  if (s == null || isNaN(s)) return '—';
+  if (s < 60) return `${s.toFixed(0)}s`;
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return `${m}m ${r}s`;
+}
+document.querySelectorAll('td[data-ts]').forEach(td => {
+  const s = parseFloat(td.dataset.ts);
+  if (!isNaN(s)) td.textContent = new Date(s * 1000).toLocaleString();
+});
+document.querySelectorAll('td[data-start]').forEach(td => {
+  const a = parseFloat(td.dataset.start);
+  const b = parseFloat(td.dataset.end);
+  td.textContent = (!isNaN(a) && !isNaN(b)) ? fmtDur(b - a) : '—';
+});
+</script>
+</body>
+</html>
