@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Badminton Analytics — Upload</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header>
+  <h1>🏸 Badminton Analytics</h1>
+  <div id="health" class="badge">checking GPU…</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Upload a match clip</h2>
+    <p class="muted">Inference runs on the remote GPU at <code>{{ infer_url }}</code>. Max upload {{ max_mb }} MB. Formats: mp4, mov, avi, mkv.</p>
+
+    <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+      <label class="dropzone" id="dropzone">
+        <input type="file" name="video" id="video" accept=".mp4,.mov,.avi,.mkv" required hidden />
+        <div class="dz-empty">
+          <strong>Drop a video here</strong><br />
+          <span class="muted">or click to choose a file</span>
+        </div>
+        <div class="dz-picked" hidden>
+          <strong id="filename"></strong>
+          <span class="muted" id="filesize"></span>
+        </div>
+      </label>
+
+      <div class="grid">
+        <div>
+          <label>Detection confidence
+            <input type="number" step="0.05" min="0.05" max="0.95" value="0.4" name="conf" />
+          </label>
+        </div>
+        <div>
+          <label>IoU threshold
+            <input type="number" step="0.05" min="0.05" max="0.95" value="0.5" name="iou" />
+          </label>
+        </div>
+        <div>
+          <label class="checkbox">
+            <input type="checkbox" name="do_shuttle" value="true" checked />
+            Run shuttle detection &amp; shot analysis
+          </label>
+        </div>
+      </div>
+
+      <button type="submit" class="primary" id="submit-btn">Start analysis</button>
+    </form>
+  </section>
+</main>
+
+<script>
+const dz = document.getElementById('dropzone');
+const input = document.getElementById('video');
+const empty = dz.querySelector('.dz-empty');
+const picked = dz.querySelector('.dz-picked');
+const filename = document.getElementById('filename');
+const filesize = document.getElementById('filesize');
+
+function setFile(f) {
+  if (!f) return;
+  input.files = makeFileList(f);
+  filename.textContent = f.name;
+  filesize.textContent = `${(f.size / 1024 / 1024).toFixed(1)} MB`;
+  empty.hidden = true;
+  picked.hidden = false;
+}
+function makeFileList(file) {
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  return dt.files;
+}
+dz.addEventListener('click', () => input.click());
+input.addEventListener('change', (e) => setFile(e.target.files[0]));
+['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('hover'); }));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('hover'); }));
+dz.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+
+document.getElementById('upload-form').addEventListener('submit', () => {
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('submit-btn').textContent = 'Uploading…';
+});
+
+async function health() {
+  const el = document.getElementById('health');
+  try {
+    const r = await fetch('/health');
+    const j = await r.json();
+    if (j.tunnel) {
+      const gpu = j.inference?.gpu?.name || 'GPU';
+      el.textContent = `✓ ${gpu}`;
+      el.classList.add('ok');
+    } else {
+      el.textContent = '✗ tunnel down';
+      el.classList.add('err');
+    }
+  } catch (e) {
+    el.textContent = '✗ no inference';
+    el.classList.add('err');
+  }
+}
+health();
+</script>
+</body>
+</html>

@@ -24,8 +24,22 @@ git clone <your-fork-of-this-repo> badminton && cd badminton
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
+
+# Install the CUDA-enabled torch wheel FIRST so ultralytics doesn't pull the
+# CPU-only build. Pick the cu### tag that matches the driver shown by
+# `nvidia-smi` (cu121 works for CUDA 12.1+, cu118 for 11.8).
+pip install --index-url https://download.pytorch.org/whl/cu121 torch
 pip install -r remote_inference/requirements-server.txt
 ```
+
+Confirm CUDA is wired up before going further:
+
+```bash
+python -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"
+nvidia-smi
+```
+
+The server is **GPU-only** and will refuse to start if `torch.cuda.is_available()` is `False`.
 
 Copy your custom shuttlecock weights up to the box, e.g. from your laptop:
 
@@ -45,11 +59,15 @@ cd ~/badminton
 source .venv/bin/activate
 export HOST=127.0.0.1
 export PORT=8000
+export INFER_DEVICE=cuda:0      # required — must be a CUDA device
+export INFER_HALF=1             # fp16 on; set to 0 to disable
 export DETECT_WEIGHTS=yolov8n.pt
 export POSE_WEIGHTS=yolov8n-pose.pt
 export SHUTTLE_WEIGHTS=weights/best.pt
 python remote_inference/server.py
 ```
+
+On a multi-GPU box pick the device by index, e.g. `INFER_DEVICE=cuda:1`.
 
 For long sessions wrap it in `tmux` or a `systemd --user` unit so it survives
 SSH disconnects.
@@ -74,8 +92,12 @@ Leave that terminal open. Verify the tunnel:
 
 ```bash
 curl http://127.0.0.1:8000/health
-# {"ok": true, "device": "cuda:0", "cuda": true, "models": ["detect","pose","shuttle"], ...}
+# {"ok": true, "device": "cuda:0", "cuda": true, "half": true,
+#  "gpu": {"index": 0, "name": "NVIDIA ...", "mem_total_mb": ...}, ...}
 ```
+
+If `cuda` is `false` or the `gpu` block is missing, the server fell back to CPU
+or never started — fix the CUDA install before continuing.
 
 ## 4. Switch the notebook to remote inference
 
@@ -120,8 +142,12 @@ required anymore — the notebook only needs `requests`, `numpy`, `opencv-python
 
 - **`Connection refused` on `curl /health`** — the server isn't listening on
   `127.0.0.1:8000`, or the tunnel died. `ssh -v` will show forward errors.
-- **`CUDA out of memory`** — drop to `yolov8s-pose.pt`, or set
-  `INFER_DEVICE=cpu` on the server side to fall back.
+- **`CUDA is not available`** at startup — the server is GPU-only. Re-install
+  torch with the right `cu###` wheel and check `nvidia-smi`. CPU is not a
+  supported fallback.
+- **`CUDA out of memory`** — keep half precision on (`INFER_HALF=1`), pick a
+  smaller pose model (e.g. `POSE_WEIGHTS=yolov8n-pose.pt`), or request a larger
+  GPU from Grafilabs.
 - **Notebook hangs on `model.track`** — the video upload is in progress; the
   first NDJSON line only arrives once the server starts emitting frames. Watch
   the server log for `ultralytics` progress.

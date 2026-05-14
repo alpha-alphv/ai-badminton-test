@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Job {{ job_id }} — Badminton Analytics</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header>
+  <h1>🏸 Job <code>{{ job_id }}</code></h1>
+  <a href="/" class="badge">← new upload</a>
+</header>
+
+<main>
+  <section class="card">
+    <h2 id="status-line">queued…</h2>
+    <p class="muted"><strong>File:</strong> {{ filename }} · <span id="elapsed">0s</span></p>
+    <div class="progress"><div id="bar"></div></div>
+    <p class="muted" id="message"></p>
+    <p class="muted" id="frames"></p>
+  </section>
+
+  <section class="card" id="result-card" hidden>
+    <h2>Results</h2>
+
+    <h3>Annotated video</h3>
+    <video id="annotated" controls preload="metadata" style="width:100%;max-height:480px;background:#000"></video>
+    <p><a id="annotated-link" download>Download annotated.mp4</a></p>
+
+    <h3>Analytics</h3>
+    <div class="gallery" id="gallery"></div>
+
+    <h3>Data files</h3>
+    <ul id="datafiles"></ul>
+  </section>
+
+  <section class="card" id="error-card" hidden>
+    <h2>Job failed</h2>
+    <pre id="error-text"></pre>
+  </section>
+</main>
+
+<script>
+const jobId = "{{ job_id }}";
+const bar = document.getElementById('bar');
+const statusLine = document.getElementById('status-line');
+const messageEl = document.getElementById('message');
+const framesEl = document.getElementById('frames');
+const elapsedEl = document.getElementById('elapsed');
+
+const galleryOrder = [
+  ['trajectories', 'Player Trajectories Over Court'],
+  ['heatmap', 'Movement Heatmap'],
+  ['court_dominance', 'Court Dominance Map (P1 − P2)'],
+  ['convex_hull', 'Convex Hull — Court Coverage'],
+  ['zone_transitions', 'Zone Transition Matrix'],
+  ['speed_weighted_court', 'Speed-Weighted Court Map'],
+  ['recovery_position', 'Recovery / Mean Position'],
+  ['speed_over_time', 'Players Speed Over Time'],
+  ['shuttle_trajectory', 'Shuttle Trajectory'],
+];
+
+const dataFiles = [
+  ['trajectory_P1', 'P1_trajectory.csv'],
+  ['trajectory_P2', 'P2_trajectory.csv'],
+  ['shuttle_trajectory', 'shuttle_trajectory.csv'],
+  ['shots', 'shots.csv'],
+  ['pose_metrics', 'pose_metrics.csv'],
+];
+
+function fmtTime(s) {
+  if (s < 60) return `${s.toFixed(0)}s`;
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return `${m}m ${r}s`;
+}
+
+function applySnapshot(s) {
+  statusLine.textContent = s.status;
+  bar.style.width = `${(s.progress * 100).toFixed(1)}%`;
+  messageEl.textContent = s.message || '';
+  if (s.total_frames) {
+    framesEl.textContent = `${s.frames_done} / ${s.total_frames} frames`;
+  }
+  elapsedEl.textContent = fmtTime(s.elapsed_s || 0);
+
+  if (s.status === 'done') {
+    renderResults(s.artifacts);
+  }
+  if (s.status === 'error') {
+    document.getElementById('error-card').hidden = false;
+    document.getElementById('error-text').textContent = s.error || 'unknown error';
+  }
+}
+
+function renderResults(artifacts) {
+  const card = document.getElementById('result-card');
+  card.hidden = false;
+
+  if (artifacts.annotated_video) {
+    const v = document.getElementById('annotated');
+    v.src = artifacts.annotated_video;
+    document.getElementById('annotated-link').href = artifacts.annotated_video;
+  }
+
+  const gallery = document.getElementById('gallery');
+  gallery.innerHTML = '';
+  for (const [key, title] of galleryOrder) {
+    const src = artifacts[key];
+    if (!src) continue;
+    const fig = document.createElement('figure');
+    fig.innerHTML = `<a href="${src}" target="_blank"><img src="${src}" alt="${title}"/></a><figcaption>${title}</figcaption>`;
+    gallery.appendChild(fig);
+  }
+
+  const ul = document.getElementById('datafiles');
+  ul.innerHTML = '';
+  for (const [key, name] of dataFiles) {
+    const src = artifacts[key];
+    if (!src) continue;
+    const li = document.createElement('li');
+    li.innerHTML = `<a href="${src}" download>${name}</a>`;
+    ul.appendChild(li);
+  }
+}
+
+const evt = new EventSource(`/jobs/${jobId}/stream`);
+evt.onmessage = (e) => {
+  try {
+    applySnapshot(JSON.parse(e.data));
+  } catch (_) {}
+};
+evt.onerror = () => {
+  // fall back to polling once SSE ends (it ends naturally on done/error)
+  fetch(`/jobs/${jobId}/status`).then(r => r.json()).then(applySnapshot);
+};
+</script>
+</body>
+</html>

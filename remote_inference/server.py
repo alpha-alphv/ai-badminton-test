@@ -41,21 +41,51 @@ from ultralytics import YOLO
 DETECT_WEIGHTS = os.environ.get("DETECT_WEIGHTS", "yolov8n.pt")
 POSE_WEIGHTS = os.environ.get("POSE_WEIGHTS", "yolov8n-pose.pt")
 SHUTTLE_WEIGHTS = os.environ.get("SHUTTLE_WEIGHTS", "weights/best.pt")
-DEVICE = os.environ.get("INFER_DEVICE", "cuda:0" if torch.cuda.is_available() else "cpu")
+# GPU is mandatory. Set INFER_DEVICE=cuda:N to pick a specific GPU on a
+# multi-GPU box. CPU is never used — startup fails loudly if CUDA is missing.
+DEVICE = os.environ.get("INFER_DEVICE", "cuda:0")
+HALF = os.environ.get("INFER_HALF", "1") not in ("0", "false", "False", "")
 
 MODELS: dict[str, YOLO] = {}
 
 
+def _require_cuda() -> None:
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is not available on this host. This server is GPU-only. "
+            "Install a CUDA-enabled torch build and ensure the GPU is visible "
+            "(check `nvidia-smi`)."
+        )
+    if not DEVICE.startswith("cuda"):
+        raise RuntimeError(
+            f"INFER_DEVICE must be a CUDA device (got {DEVICE!r}). "
+            "CPU inference is disabled."
+        )
+    idx = int(DEVICE.split(":", 1)[1]) if ":" in DEVICE else 0
+    if idx >= torch.cuda.device_count():
+        raise RuntimeError(
+            f"INFER_DEVICE={DEVICE} but only {torch.cuda.device_count()} CUDA "
+            "device(s) are visible."
+        )
+    torch.cuda.set_device(idx)
+
+
 def _load_models() -> None:
     """Eagerly load every model onto the GPU at startup so the first request is fast."""
+    _require_cuda()
+    name = torch.cuda.get_device_name(torch.cuda.current_device())
+    print(f"[infer] using {DEVICE} ({name}); half precision = {HALF}")
+
     MODELS["detect"] = YOLO(DETECT_WEIGHTS)
     MODELS["pose"] = YOLO(POSE_WEIGHTS)
     MODELS["shuttle"] = YOLO(SHUTTLE_WEIGHTS)
-    for name, m in MODELS.items():
-        try:
-            m.to(DEVICE)
-        except Exception as exc:
-            print(f"[warn] could not move {name} to {DEVICE}: {exc}")
+    for tag, m in MODELS.items():
+        m.to(DEVICE)
+        if HALF:
+            try:
+                m.model.half()
+            except Exception as exc:
+                print(f"[warn] could not enable fp16 on {tag}: {exc}")
 
 
 @asynccontextmanager
@@ -102,10 +132,11 @@ def _result_to_dict(result, frame_idx: Optional[int] = None) -> dict:
 
 @app.get("/health")
 def health():
-    return {
+    info = {
         "ok": True,
         "device": DEVICE,
         "cuda": torch.cuda.is_available(),
+        "half": HALF,
         "models": sorted(MODELS.keys()),
         "weights": {
             "detect": DETECT_WEIGHTS,
@@ -113,6 +144,16 @@ def health():
             "shuttle": SHUTTLE_WEIGHTS,
         },
     }
+    if torch.cuda.is_available():
+        idx = torch.cuda.current_device()
+        info["gpu"] = {
+            "index": idx,
+            "name": torch.cuda.get_device_name(idx),
+            "mem_total_mb": int(torch.cuda.get_device_properties(idx).total_memory / 1024**2),
+            "mem_allocated_mb": int(torch.cuda.memory_allocated(idx) / 1024**2),
+            "mem_reserved_mb": int(torch.cuda.memory_reserved(idx) / 1024**2),
+        }
+    return info
 
 
 @app.post("/predict")
@@ -127,7 +168,14 @@ async def predict(
 
     raw = await image.read()
     frame = _decode_image(raw)
-    results = MODELS[model].predict(frame, conf=conf, iou=iou, device=DEVICE, verbose=False)
+    results = MODELS[model].predict(
+        frame,
+        conf=conf,
+        iou=iou,
+        device=DEVICE,
+        half=HALF,
+        verbose=False,
+    )
     return JSONResponse(_result_to_dict(results[0]))
 
 
@@ -161,6 +209,7 @@ async def track(
                 show=False,
                 verbose=False,
                 device=DEVICE,
+                half=HALF,
             )
             for i, r in enumerate(stream):
                 yield json.dumps(_result_to_dict(r, frame_idx=i)) + "\n"
