@@ -1,0 +1,54 @@
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+pip-wheel-metadata/
+
+# ----- Virtual environments -----
+.venv/
+venv/
+env/
+ENV/
+
+# ----- Jupyter -----
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# ----- IDE / editor -----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ----- OS noise -----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----- Generated analytics output (notebook + UI) -----
+# Everything the notebook writes ends up under results/; the UI writes uploaded
+# videos + per-job artifacts under ui/data/. Both are reproducible from source,
+# so neither belongs in version control.
+results/
+ui/data/
+
+# ----- Training runs / experiment artifacts -----
+runs/
+logs/
+*.log
+
+# ----- Model checkpoints (keep the deployed best.pt — see note below) -----
+weights/last.pt
+
+# ----- Temporary files -----
+*.tmp
+tmp/
+.cache/

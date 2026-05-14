@@ -484,8 +484,26 @@ def render_annotated_video(
         for _, row in shuttle_df.iterrows()
     } if not shuttle_df.empty else {}
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
+    # Browser-playable H.264 MP4 via imageio-ffmpeg (bundles its own ffmpeg
+    # binary). OpenCV's mp4v fourcc would also write an .mp4, but it produces
+    # MPEG-4 Part 2 which Chrome/Edge/Firefox refuse to decode in <video>.
+    import imageio.v2 as imageio  # local import keeps the dep optional at import time
+
+    # x264 needs even dimensions for yuv420p; pad odd sizes by 1.
+    out_w = w if w % 2 == 0 else w + 1
+    out_h = h if h % 2 == 0 else h + 1
+    pad_x = out_w - w
+    pad_y = out_h - h
+
+    writer = imageio.get_writer(
+        str(out_path),
+        fps=fps,
+        codec="libx264",
+        quality=8,
+        pixelformat="yuv420p",
+        macro_block_size=1,
+        ffmpeg_params=["-movflags", "+faststart"],  # let browsers start before the file fully downloads
+    )
 
     i = 0
     while True:
@@ -514,11 +532,15 @@ def render_annotated_video(
         if shuttle:
             cv2.circle(frame, (int(shuttle[0]), int(shuttle[1])), 8, (0, 255, 255), -1)
             cv2.circle(frame, (int(shuttle[0]), int(shuttle[1])), 14, (0, 255, 255), 2)
-        writer.write(frame)
+
+        if pad_x or pad_y:
+            frame = cv2.copyMakeBorder(frame, 0, pad_y, 0, pad_x, cv2.BORDER_CONSTANT, value=0)
+        # imageio wants RGB; OpenCV gives BGR.
+        writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         i += 1
         if progress_cb and i % 30 == 0:
             progress_cb(i, total)
     cap.release()
-    writer.release()
+    writer.close()
     if progress_cb:
         progress_cb(i, total)

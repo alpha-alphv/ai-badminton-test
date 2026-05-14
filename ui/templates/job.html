@@ -75,6 +75,16 @@ function fmtTime(s) {
   return `${m}m ${r}s`;
 }
 
+let evt = null;
+let resultsRendered = false;
+
+function closeStream() {
+  if (evt) {
+    evt.close();
+    evt = null;
+  }
+}
+
 function applySnapshot(s) {
   statusLine.textContent = s.status;
   bar.style.width = `${(s.progress * 100).toFixed(1)}%`;
@@ -86,20 +96,36 @@ function applySnapshot(s) {
 
   if (s.status === 'done') {
     renderResults(s.artifacts);
+    // Stop the SSE so the browser doesn't auto-reconnect and re-trigger
+    // renderResults on every reconnect — which would constantly reset
+    // <video>.src and prevent playback.
+    closeStream();
   }
   if (s.status === 'error') {
     document.getElementById('error-card').hidden = false;
     document.getElementById('error-text').textContent = s.error || 'unknown error';
+    closeStream();
   }
 }
 
+function absUrl(path) {
+  return new URL(path, location.href).href;
+}
+
 function renderResults(artifacts) {
+  if (resultsRendered) return;   // idempotent: only build the DOM once
+  resultsRendered = true;
+
   const card = document.getElementById('result-card');
   card.hidden = false;
 
   if (artifacts.annotated_video) {
     const v = document.getElementById('annotated');
-    v.src = artifacts.annotated_video;
+    const target = absUrl(artifacts.annotated_video);
+    if (v.src !== target) {
+      v.src = target;
+      v.load();
+    }
     document.getElementById('annotated-link').href = artifacts.annotated_video;
   }
 
@@ -124,15 +150,21 @@ function renderResults(artifacts) {
   }
 }
 
-const evt = new EventSource(`/jobs/${jobId}/stream`);
+evt = new EventSource(`/jobs/${jobId}/stream`);
 evt.onmessage = (e) => {
   try {
     applySnapshot(JSON.parse(e.data));
   } catch (_) {}
 };
 evt.onerror = () => {
-  // fall back to polling once SSE ends (it ends naturally on done/error)
-  fetch(`/jobs/${jobId}/status`).then(r => r.json()).then(applySnapshot);
+  // EventSource fires onerror both for transient drops AND for normal stream
+  // close. If we've already rendered results, treat this as a normal close.
+  if (resultsRendered) {
+    closeStream();
+    return;
+  }
+  // Otherwise fall back to one polling fetch to recover the snapshot.
+  fetch(`/jobs/${jobId}/status`).then(r => r.json()).then(applySnapshot).catch(() => {});
 };
 </script>
 </body>
