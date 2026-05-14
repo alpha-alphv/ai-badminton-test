@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['Shuttlecock']
+
+roboflow:
+  workspace: mathieu-cartron
+  project: shuttlecock-cqzy3
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/mathieu-cartron/shuttlecock-cqzy3/dataset/1
