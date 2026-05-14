@@ -193,12 +193,15 @@ async def track(
 
     suffix = os.path.splitext(video.filename or "video.mp4")[1] or ".mp4"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    try:
-        tmp.write(await video.read())
-        tmp.flush()
-        tmp.close()
+    tmp.write(await video.read())
+    tmp.flush()
+    tmp.close()
 
-        def gen():
+    # Cleanup MUST live inside the generator. If it lived in an outer
+    # try/finally, the file would be unlinked as soon as ``track`` returned
+    # the StreamingResponse — before ultralytics opens it from inside ``gen``.
+    def gen():
+        try:
             stream = MODELS[model].track(
                 source=tmp.name,
                 conf=conf,
@@ -213,13 +216,13 @@ async def track(
             )
             for i, r in enumerate(stream):
                 yield json.dumps(_result_to_dict(r, frame_idx=i)) + "\n"
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
 
-        return StreamingResponse(gen(), media_type="application/x-ndjson")
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
 
 
 if __name__ == "__main__":
