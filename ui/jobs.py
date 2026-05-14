@@ -3,16 +3,13 @@ Background job runner: drives the remote inference server through the SSH
 tunnel, then runs all of the notebook analytics locally on the resulting
 trajectories.
 
-The job is intentionally synchronous CPU work (pure numpy / pandas / matplotlib);
-the only network calls are the few POSTs to the remote inference server.
+Job state lives in Postgres (see ui/db.py). The in-process Job object is a
+thin handle that writes through to the database on every update so the UI's
+SSE stream can serve fresh snapshots even after a process restart.
 """
 from __future__ import annotations
 
-import json
-import os
-import shutil
 import sys
-import threading
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -22,16 +19,13 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 import pandas as pd
-import requests
 
 UI_DIR = Path(__file__).parent
 sys.path.insert(0, str((UI_DIR.parent / "remote_inference").resolve()))
 from remote_yolo import RemoteYOLO  # noqa: E402
 
 import analytics  # noqa: E402
-
-
-JOBS: dict[str, "Job"] = {}
+import db  # noqa: E402
 
 
 @dataclass
@@ -44,7 +38,7 @@ class Job:
     iou: float = 0.5
     do_shuttle: bool = True
 
-    status: str = "queued"  # queued | tracking | pose | shuttle | analytics | rendering | done | error
+    status: str = "queued"
     message: str = ""
     progress: float = 0.0
     total_frames: int = 0
@@ -53,37 +47,82 @@ class Job:
     finished_at: Optional[float] = None
     error: Optional[str] = None
 
-    artifacts: dict[str, str] = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    def persist(self) -> None:
+        """Insert the initial row for this job."""
+        db.insert_job({
+            "id": self.id,
+            "status": self.status,
+            "message": self.message,
+            "progress": self.progress,
+            "total_frames": self.total_frames,
+            "frames_done": self.frames_done,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "error": self.error,
+            "input_filename": self.input_path.name,
+            "input_path": str(self.input_path),
+            "result_dir": str(self.result_dir),
+            "infer_url": self.infer_url,
+            "conf": self.conf,
+            "iou": self.iou,
+            "do_shuttle": self.do_shuttle,
+        })
 
     def update(self, **kw: Any) -> None:
-        with self._lock:
-            for k, v in kw.items():
-                setattr(self, k, v)
+        for k, v in kw.items():
+            setattr(self, k, v)
+        db.update_job(self.id, kw)
 
     def add_artifact(self, key: str, path: Path) -> None:
-        with self._lock:
-            self.artifacts[key] = f"/results/{self.id}/{path.name}"
+        url = f"/results/{self.id}/{path.name}"
+        db.upsert_artifact(self.id, key, url, str(path))
 
-    def snapshot(self) -> dict:
-        with self._lock:
-            return {
-                "id": self.id,
-                "status": self.status,
-                "message": self.message,
-                "progress": round(self.progress, 3),
-                "total_frames": self.total_frames,
-                "frames_done": self.frames_done,
-                "started_at": self.started_at,
-                "finished_at": self.finished_at,
-                "elapsed_s": round((self.finished_at or time.time()) - self.started_at, 1),
-                "error": self.error,
-                "artifacts": dict(self.artifacts),
-            }
+
+def snapshot(job_id: str) -> Optional[dict]:
+    row = db.get_job(job_id)
+    if row is None:
+        return None
+    finished_at = row["finished_at"]
+    return {
+        "id": row["id"],
+        "status": row["status"],
+        "message": row["message"],
+        "progress": round(row["progress"], 3),
+        "total_frames": row["total_frames"],
+        "frames_done": row["frames_done"],
+        "started_at": row["started_at"],
+        "finished_at": finished_at,
+        "elapsed_s": round((finished_at or time.time()) - row["started_at"], 1),
+        "error": row["error"],
+        "artifacts": db.list_artifacts(row["id"]),
+    }
+
+
+def load_job(job_id: str) -> Optional[Job]:
+    row = db.get_job(job_id)
+    if row is None:
+        return None
+    return Job(
+        id=row["id"],
+        input_path=Path(row["input_path"]),
+        result_dir=Path(row["result_dir"]),
+        infer_url=row["infer_url"],
+        conf=row["conf"],
+        iou=row["iou"],
+        do_shuttle=row["do_shuttle"],
+        status=row["status"],
+        message=row["message"],
+        progress=row["progress"],
+        total_frames=row["total_frames"],
+        frames_done=row["frames_done"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+        error=row["error"],
+    )
 
 
 def run_job(job_id: str) -> None:
-    job = JOBS.get(job_id)
+    job = load_job(job_id)
     if not job:
         return
     try:

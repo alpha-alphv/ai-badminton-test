@@ -1,0 +1,26 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# large notebook artefacts — the UI image doesn't need any of these
+notebooks/
+weights/
+videos/
+ui/data/
+
+# editor/OS junk
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# build outputs
+*.egg-info
+dist/
+build/

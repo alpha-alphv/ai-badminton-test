@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: badminton
+      POSTGRES_PASSWORD: badminton
+      POSTGRES_DB: badminton
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No host port mapping — the UI container reaches Postgres on the compose
+    # network via the "postgres" hostname. For ad-hoc psql, run:
+    #     docker compose exec postgres psql -U badminton
+    # If you really need a host port, uncomment below and pick a free one
+    # (Windows often reserves 5432; try 55432):
+    # ports:
+    #   - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U badminton -d badminton"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://badminton:badminton@postgres:5432/badminton
+      # The SSH tunnel runs on the host, so reach it through host.docker.internal.
+      # On Linux without Docker Desktop this also resolves thanks to extra_hosts below.
+      BADMINTON_INFER_URL: ${BADMINTON_INFER_URL:-http://host.docker.internal:8000}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:7860:7860"
+    volumes:
+      # artifacts survive container rebuilds
+      - uidata:/app/ui/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7860/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  uidata:

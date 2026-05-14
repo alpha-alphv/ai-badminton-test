@@ -75,7 +75,6 @@ function makeFileList(file) {
   dt.items.add(file);
   return dt.files;
 }
-dz.addEventListener('click', () => input.click());
 input.addEventListener('change', (e) => setFile(e.target.files[0]));
 ['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('hover'); }));
 ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('hover'); }));

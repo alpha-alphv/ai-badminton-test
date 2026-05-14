@@ -12,6 +12,7 @@ Architecture
                      │  uploads video
                      ▼
                 Job runner (thread, jobs.py)
+                     │  state ←→ Postgres (db.py)
                      │  POST /track over the tunnel
                      ▼
             Remote inference server (127.0.0.1:8000 -> GPU box)
@@ -29,7 +30,6 @@ import requests
 from flask import (
     Flask,
     Response,
-    abort,
     jsonify,
     redirect,
     render_template,
@@ -38,11 +38,12 @@ from flask import (
 )
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from jobs import JOBS, Job, run_job
+import db
+from jobs import Job, run_job, snapshot
 
 
 UI_DIR = Path(__file__).parent
-DATA_DIR = UI_DIR / "data"
+DATA_DIR = Path(os.environ.get("UI_DATA_DIR", str(UI_DIR / "data")))
 UPLOAD_DIR = DATA_DIR / "uploads"
 RESULT_DIR = DATA_DIR / "results"
 for d in (UPLOAD_DIR, RESULT_DIR):
@@ -60,6 +61,8 @@ app = Flask(
     static_url_path="/static",
 )
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
+
+db.init_schema()
 
 
 @app.route("/")
@@ -109,7 +112,7 @@ def upload():
         do_shuttle=do_shuttle,
     )
     job.result_dir.mkdir(parents=True, exist_ok=True)
-    JOBS[job_id] = job
+    job.persist()
 
     threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
     return redirect(f"/jobs/{job_id}", code=303)
@@ -122,31 +125,32 @@ def _too_large(_exc):
 
 @app.route("/jobs/<job_id>")
 def job_page(job_id: str):
-    job = JOBS.get(job_id)
-    if not job:
+    row = db.get_job(job_id)
+    if not row:
         return f"<h1>unknown job {job_id}</h1>", 404
-    return render_template("job.html", job_id=job_id, filename=job.input_path.name)
+    return render_template("job.html", job_id=job_id, filename=row["input_filename"])
 
 
 @app.route("/jobs/<job_id>/status")
 def job_status(job_id: str):
-    job = JOBS.get(job_id)
-    if not job:
+    snap = snapshot(job_id)
+    if snap is None:
         return jsonify({"error": "unknown job"}), 404
-    return jsonify(job.snapshot())
+    return jsonify(snap)
 
 
 @app.route("/jobs/<job_id>/stream")
 def job_stream(job_id: str):
     """Server-Sent Events stream of job progress so the page updates live."""
-    job = JOBS.get(job_id)
-    if not job:
+    if snapshot(job_id) is None:
         return jsonify({"error": "unknown job"}), 404
 
     def gen():
         last = None
         while True:
-            snap = job.snapshot()
+            snap = snapshot(job_id)
+            if snap is None:
+                break
             if snap != last:
                 yield f"data: {json.dumps(snap)}\n\n"
                 last = snap
@@ -159,19 +163,14 @@ def job_stream(job_id: str):
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # disable proxy buffering if anyone fronts this
+            "X-Accel-Buffering": "no",
         },
     )
 
 
 @app.route("/results/<path:filename>")
 def results(filename: str):
-    """Serve any artifact written into ui/data/results/<job_id>/...
-
-    Flask doesn't auto-mount directories the way FastAPI's StaticFiles does, so
-    we route this manually. ``send_from_directory`` rejects paths that escape
-    the base dir, so this is safe against ``..`` traversal.
-    """
+    """Serve any artifact written into ui/data/results/<job_id>/..."""
     return send_from_directory(RESULT_DIR, filename, conditional=True)
 
 
@@ -179,6 +178,6 @@ if __name__ == "__main__":
     app.run(
         host=os.environ.get("UI_HOST", "127.0.0.1"),
         port=int(os.environ.get("UI_PORT", "7860")),
-        threaded=True,    # required so SSE doesn't block other requests
+        threaded=True,
         debug=False,
     )

@@ -1,13 +1,15 @@
 :root {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --panel-2: #273449;
-  --border: #334155;
-  --text: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #22d3ee;
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --panel-2: #f1f5f9;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #0284c7;
+  --accent-ink: #ffffff;
   --accent-2: #16a34a;
-  --err: #f87171;
+  --err: #dc2626;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 
 * { box-sizing: border-box; }
@@ -23,6 +25,7 @@ header {
   align-items: center;
   justify-content: space-between;
   padding: 18px 28px;
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 header h1 { font-size: 1.2rem; margin: 0; font-weight: 600; }
@@ -41,12 +44,20 @@ main {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 22px 26px;
+  box-shadow: var(--shadow);
 }
 .card h2 { margin-top: 0; font-weight: 600; font-size: 1.1rem; }
 .card h3 { margin: 18px 0 8px; font-weight: 600; font-size: 1rem; color: var(--muted); }
 
 .muted { color: var(--muted); font-size: 0.9rem; }
-code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+code {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: #334155;
+}
 
 .badge {
   background: var(--panel-2);
@@ -57,14 +68,15 @@ code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px;
   text-decoration: none;
   font-size: 0.85rem;
 }
-.badge.ok { color: var(--accent-2); border-color: var(--accent-2); }
-.badge.err { color: var(--err); border-color: var(--err); }
+.badge.ok { color: var(--accent-2); border-color: var(--accent-2); background: #f0fdf4; }
+.badge.err { color: var(--err); border-color: var(--err); background: #fef2f2; }
 
 .dropzone {
   display: block;
   margin: 18px 0 14px;
   padding: 36px;
   text-align: center;
+  background: var(--panel-2);
   border: 2px dashed var(--border);
   border-radius: 10px;
   cursor: pointer;
@@ -72,7 +84,7 @@ code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px;
 }
 .dropzone:hover, .dropzone.hover {
   border-color: var(--accent);
-  background: rgba(34,211,238,0.04);
+  background: #eff6ff;
 }
 .dz-empty strong { font-size: 1.05rem; }
 
@@ -87,10 +99,15 @@ code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px;
   width: 100%;
   margin-top: 4px;
   padding: 6px 10px;
-  background: var(--panel-2);
+  background: #ffffff;
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 6px;
+}
+.grid input[type=number]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
 }
 .checkbox { display: flex !important; align-items: center; gap: 8px; padding-top: 22px; }
 
@@ -100,16 +117,19 @@ button.primary {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: #052e3a;
+  color: var(--accent-ink);
   font-weight: 600;
   font-size: 1rem;
   cursor: pointer;
+  transition: background 0.15s;
 }
+button.primary:hover { background: #0369a1; }
 button.primary:disabled { opacity: 0.6; cursor: progress; }
 
 .progress {
   height: 10px;
   background: var(--panel-2);
+  border: 1px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
   margin: 12px 0 8px;
@@ -139,21 +159,24 @@ button.primary:disabled { opacity: 0.6; cursor: progress; }
   border-radius: 8px;
   overflow: hidden;
 }
-.gallery img { width: 100%; display: block; }
+.gallery img { width: 100%; display: block; background: #ffffff; }
 .gallery figcaption {
   padding: 8px 12px;
   font-size: 0.85rem;
   color: var(--muted);
   border-top: 1px solid var(--border);
+  background: var(--panel);
 }
 
 #datafiles { padding-left: 18px; }
 #datafiles li { margin: 4px 0; }
 a { color: var(--accent); }
+a:hover { color: #0369a1; }
 
 pre {
-  background: #000;
+  background: #fef2f2;
   color: var(--err);
+  border: 1px solid #fecaca;
   padding: 12px;
   border-radius: 6px;
   overflow-x: auto;
