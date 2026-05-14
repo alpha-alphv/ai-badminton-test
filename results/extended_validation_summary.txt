@@ -1,0 +1,14 @@
+
+--- P1 ---
+speed: len=2200, min=0.000, max=7.901, mean=1.080
+distance: len=2200, min=0.026, max=79.198, mean=40.529
+leg_stretch: len=4425, min=0.176, max=0.872, mean=0.483
+body_angle: len=4425, min=0.701, max=179.416, mean=92.450
+
+--- P2 ---
+speed: len=2210, min=0.000, max=7.109, mean=1.236
+distance: len=2210, min=0.002, max=91.080, mean=47.105
+leg_stretch: len=4425, min=0.176, max=0.872, mean=0.483
+body_angle: len=4425, min=0.701, max=179.416, mean=92.450
+
+Some metric values outside expected range
